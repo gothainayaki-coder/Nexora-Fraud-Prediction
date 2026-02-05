@@ -4,6 +4,7 @@
   "description": "Future Fraud Predictor Using Crowd Intelligence - Full Stack Application",
   "private": true,
   "scripts": {
+    "start": "npx concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "install:all": "cd backend && npm install && cd ../frontend && npm install",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",

@@ -24,6 +24,7 @@ const otpService = require('../services/otpService');
 const emailService = require('../services/emailService');
 const websocketService = require('../services/websocketService');
 const notificationService = require('../services/notificationService'); // Twilio & Sync Engine
+const upload = require('../middleware/upload');
 
 // Demo Mode Storage (In-memory)
 const demoStorage = {
@@ -1189,7 +1190,7 @@ router.post('/fraud/report', authenticateToken, [
     .optional()
     .isNumeric()
     .withMessage('Amount lost must be a number')
-], validate, async (req, res) => {
+], upload.array('evidenceFiles', 5), validate, async (req, res) => {
   try {
     const {
       targetEntity,
@@ -1208,8 +1209,10 @@ router.post('/fraud/report', authenticateToken, [
     console.log('Entity Type:', entityType);
     console.log('Category:', category);
     console.log('Reporter ID:', req.user._id);
+    console.log('Files received:', req.files?.length || 0);
 
-    // Create fraud report
+    // Collect file paths
+    const evidenceUrls = req.files ? req.files.map(file => `/uploads/${file.filename}`) : [];
     const report = new FraudReport({
       reporterId: req.user._id,
       targetEntity: normalizedEntity,
@@ -1217,13 +1220,20 @@ router.post('/fraud/report', authenticateToken, [
       category,
       description,
       evidence: evidence || '',
+      evidenceUrls,
       amountLost: amountLost || 0,
       incidentDate: incidentDate ? new Date(incidentDate) : null,
       timestamp: new Date(),
       isActive: true
     });
 
-    await report.save();
+    if (global.DEMO_MODE) {
+      // In Demo Mode, save to memory
+      global.demoStorage.reports.push(report);
+      console.log('📝 Saved report to in-memory storage (Demo Mode)');
+    } else {
+      await report.save();
+    }
     console.log('Report saved successfully! ID:', report._id);
     console.log('==========================================\n');
 
@@ -1544,7 +1554,11 @@ router.post('/settings/protection', authenticateToken, [
       };
     }
 
-    await req.user.save();
+    if (!global.DEMO_MODE) {
+      await req.user.save();
+    } else {
+      console.log('📝 Skipped user save in Demo Mode (In-memory user)');
+    }
 
     // Log activity
     await ActivityLog.logActivity({
@@ -1990,6 +2004,26 @@ router.get('/activity/my-history', authenticateToken, async (req, res) => {
 // GET /api/stats/overview - Get platform statistics
 router.get('/stats/overview', async (req, res) => {
   try {
+    if (global.DEMO_MODE) {
+      // Provide non-zero mock data for Demo Mode
+      return res.json({
+        success: true,
+        data: {
+          totalReports: (demoStorage.reports?.length || 0) + 1240,
+          recentReports: 156,
+          totalUsers: (demoStorage.users?.length || 0) + 850,
+          blockedEntities: 42,
+          topCategories: [
+            { category: 'Phishing', count: 450 },
+            { category: 'Financial Fraud', count: 320 },
+            { category: 'Identity Theft', count: 210 },
+            { category: 'Investment Scam', count: 180 },
+            { category: 'Spam', count: 80 }
+          ]
+        }
+      });
+    }
+
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 

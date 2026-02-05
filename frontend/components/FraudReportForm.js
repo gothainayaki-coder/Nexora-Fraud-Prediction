@@ -4,7 +4,8 @@
 import { useState } from 'react';
 import { fraudAPI } from '../lib/api';
 import toast from 'react-hot-toast';
-import { FiAlertTriangle, FiSend, FiLoader } from 'react-icons/fi';
+import { FiAlertTriangle, FiSend, FiLoader, FiFile, FiTrash2 } from 'react-icons/fi';
+import api from '../lib/api'; // Direct api for custom FormData config
 
 const ENTITY_TYPES = [
   { value: 'phone', label: 'Phone Number' },
@@ -35,15 +36,27 @@ export default function FraudReportForm({ onSuccess }) {
     evidence: '',
     amountLost: '',
   });
+  const [evidenceFiles, setEvidenceFiles] = useState([]);
   const [errors, setErrors] = useState({});
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
+    const { name, value, type, files } = e.target;
+
+    if (type === 'file') {
+      const selectedFiles = Array.from(files);
+      setEvidenceFiles(prev => [...prev, ...selectedFiles]);
+      return;
+    }
+
     setFormData(prev => ({ ...prev, [name]: value }));
     // Clear error when user types
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
+  };
+
+  const removeFile = (index) => {
+    setEvidenceFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   const validateForm = () => {
@@ -69,19 +82,31 @@ export default function FraudReportForm({ onSuccess }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!validateForm()) return;
 
     setLoading(true);
     try {
-      const reportData = {
-        ...formData,
-        amountLost: formData.amountLost ? Number(formData.amountLost) : 0,
-      };
+      const data = new FormData();
+      data.append('targetEntity', formData.targetEntity);
+      data.append('entityType', formData.entityType);
+      data.append('category', formData.category);
+      data.append('description', formData.description);
+      data.append('evidence', formData.evidence);
+      data.append('amountLost', formData.amountLost || 0);
 
-      const response = await fraudAPI.submitReport(reportData);
-      
-      if (response.success) {
+      evidenceFiles.forEach(file => {
+        data.append('evidenceFiles', file);
+      });
+
+      // Use the base api instance to send FormData
+      const response = await api.post('/fraud/report', data, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        }
+      });
+
+      if (response.data.success) {
         toast.success('Fraud report submitted successfully!');
         // Reset form
         setFormData({
@@ -92,7 +117,8 @@ export default function FraudReportForm({ onSuccess }) {
           evidence: '',
           amountLost: '',
         });
-        if (onSuccess) onSuccess(response.data.report);
+        setEvidenceFiles([]);
+        if (onSuccess) onSuccess(response.data.data.report);
       }
     } catch (error) {
       toast.error(error.message || 'Failed to submit report');
@@ -141,11 +167,10 @@ export default function FraudReportForm({ onSuccess }) {
               value={formData.targetEntity}
               onChange={handleChange}
               placeholder="Enter the fraudulent entity"
-              className={`w-full px-4 py-3 border-2 rounded-xl transition-all outline-none focus:ring-4 ${
-                errors.targetEntity 
-                  ? 'border-red-500 focus:border-red-500 focus:ring-red-100' 
+              className={`w-full px-4 py-3 border-2 rounded-xl transition-all outline-none focus:ring-4 ${errors.targetEntity
+                  ? 'border-red-500 focus:border-red-500 focus:ring-red-100'
                   : 'border-gray-200 focus:border-purple-500 focus:ring-purple-100'
-              }`}
+                }`}
             />
             {errors.targetEntity && (
               <p className="text-red-500 text-sm mt-1">{errors.targetEntity}</p>
@@ -184,30 +209,81 @@ export default function FraudReportForm({ onSuccess }) {
             onChange={handleChange}
             rows={4}
             placeholder="Describe what happened, how you were contacted, what they asked for..."
-            className={`w-full px-4 py-3 border-2 rounded-xl resize-none transition-all outline-none focus:ring-4 ${
-              errors.description 
-                ? 'border-red-500 focus:border-red-500 focus:ring-red-100' 
+            className={`w-full px-4 py-3 border-2 rounded-xl resize-none transition-all outline-none focus:ring-4 ${errors.description
+                ? 'border-red-500 focus:border-red-500 focus:ring-red-100'
                 : 'border-gray-200 focus:border-purple-500 focus:ring-purple-100'
-            }`}
+              }`}
           />
           {errors.description && (
             <p className="text-red-500 text-sm mt-1">{errors.description}</p>
           )}
         </div>
 
-        {/* Evidence */}
+        {/* Evidence (Text) */}
         <div>
           <label className="block text-sm font-semibold text-gray-700 mb-2">
-            Evidence <span className="text-gray-400 font-normal">(Optional)</span>
+            Evidence Description <span className="text-gray-400 font-normal">(Optional)</span>
           </label>
           <textarea
             name="evidence"
             value={formData.evidence}
             onChange={handleChange}
-            rows={3}
-            placeholder="Paste any messages, URLs, or additional evidence..."
+            rows={2}
+            placeholder="Paste any relevant messages or links here..."
             className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl resize-none focus:border-purple-500 focus:ring-4 focus:ring-purple-100 transition-all outline-none"
           />
+        </div>
+
+        {/* Evidence (Files) */}
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">
+            Upload Proof <span className="text-gray-400 font-normal">(Images/Voice Messages - Optional)</span>
+          </label>
+          <div className="flex flex-col gap-4">
+            <div className="relative group">
+              <input
+                type="file"
+                multiple
+                accept="image/*,audio/*"
+                onChange={handleChange}
+                className="hidden"
+                id="file-upload"
+              />
+              <label
+                htmlFor="file-upload"
+                className="flex items-center justify-center gap-3 px-6 py-4 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-purple-500 hover:bg-purple-50 transition-all group-hover:scale-[1.01]"
+              >
+                <FiFile className="w-6 h-6 text-gray-400 group-hover:text-purple-500" />
+                <span className="text-gray-600 group-hover:text-purple-700 font-medium">
+                  {evidenceFiles.length > 0 ? 'Add more files' : 'Select images or audio files'}
+                </span>
+              </label>
+            </div>
+
+            {/* File List */}
+            {evidenceFiles.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {evidenceFiles.map((file, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <FiFile className="w-4 h-4 text-purple-500 flex-shrink-0" />
+                      <span className="text-sm text-gray-700 truncate">{file.name}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeFile(index)}
+                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                    >
+                      <FiTrash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-gray-400 mt-2">
+            Accepted formats: JPG, PNG, JPEG, MP3, AAC, WAV (Max 10MB per file)
+          </p>
         </div>
 
         {/* Amount Lost */}
@@ -223,11 +299,10 @@ export default function FraudReportForm({ onSuccess }) {
               value={formData.amountLost}
               onChange={handleChange}
               placeholder="0"
-              className={`w-full pl-10 pr-4 py-3 border-2 rounded-xl transition-all outline-none focus:ring-4 ${
-                errors.amountLost 
-                  ? 'border-red-500 focus:border-red-500 focus:ring-red-100' 
+              className={`w-full pl-10 pr-4 py-3 border-2 rounded-xl transition-all outline-none focus:ring-4 ${errors.amountLost
+                  ? 'border-red-500 focus:border-red-500 focus:ring-red-100'
                   : 'border-gray-200 focus:border-purple-500 focus:ring-purple-100'
-              }`}
+                }`}
             />
           </div>
           {errors.amountLost && (

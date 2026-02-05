@@ -9,6 +9,7 @@ const http = require('http');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const mongoSanitize = require('express-mongo-sanitize');
+const path = require('path');
 
 // Import services
 const emailService = require('./services/emailService');
@@ -156,6 +157,9 @@ if (process.env.NODE_ENV !== 'production') {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Serve static uploads
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // Request logging middleware with PII Masking
 if (process.env.NODE_ENV !== 'production') {
   app.use((req, res, next) => {
@@ -182,37 +186,42 @@ let connectionRetries = 0;
 global.DEMO_MODE = false;
 
 const connectDB = async () => {
-  try {
-    const options = {
-      serverSelectionTimeoutMS: 5000, // Timeout after 5s
-    };
+  const uris = [
+    MONGODB_URI,
+    'mongodb://127.0.0.1:27017/nexora_fraud_predictor',
+    'mongodb://localhost:27017/nexora_fraud_predictor?family=4'
+  ];
 
-    await mongoose.connect(MONGODB_URI, options);
-    console.log('✅ MongoDB Connected Successfully');
-    console.log(`📦 Database: ${mongoose.connection.name}`);
-    global.DEMO_MODE = false;
-
-    // Handle connection events
-    mongoose.connection.on('error', (err) => {
-      console.error('MongoDB connection error:', err);
-    });
-
-    mongoose.connection.on('disconnected', () => {
-      console.log('⚠️ MongoDB disconnected');
-    });
-
-  } catch (error) {
-    connectionRetries++;
-    console.error(`❌ MongoDB Connection Error (Attempt ${connectionRetries}):`, error.message);
-
-    if (connectionRetries >= 1 && !global.DEMO_MODE) {
-      console.log('🚀 ACTIVATING DEMO MODE: App will function using in-memory storage.');
-      global.DEMO_MODE = true;
+  for (const uri of uris) {
+    try {
+      console.log(`🔌 Attempting to connect to MongoDB at: ${uri}`);
+      await mongoose.connect(uri, {
+        serverSelectionTimeoutMS: 5000
+      });
+      console.log('✅ MongoDB Connected Successfully');
+      console.log(`📦 Database: ${mongoose.connection.name}`);
+      global.DEMO_MODE = false;
+      return;
+    } catch (error) {
+      console.error(`❌ Connection failed for ${uri}:`, error.message);
     }
-
-    // Retry connection after 30 seconds in background
-    setTimeout(connectDB, 30000);
   }
+
+  if (!global.DEMO_MODE) {
+    console.log('🚀 ACTIVATING DEMO MODE: App will function using in-memory storage.');
+    global.DEMO_MODE = true;
+  }
+
+  // Retry periodically in background
+  setTimeout(connectDB, 60000);
+};
+
+// Demo Mode Storage (In-memory)
+global.demoStorage = {
+  users: [],
+  reports: [],
+  activities: [],
+  alerts: []
 };
 
 // Connect to database

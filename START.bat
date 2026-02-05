@@ -1,17 +1,24 @@
 @echo off
-:: ============================================================
-:: NEXORA FRAUD PREDICTOR - Quick Start
-:: ============================================================
-:: Double-click this file to start the entire project!
-:: ============================================================
-
-title Nexora Fraud Predictor - Starting...
-
-echo.
+title NEXORA CONTROL CENTER - STARTING...
 echo ============================================================
-echo    NEXORA FRAUD PREDICTOR - Starting Project...
+echo    NEXORA FRAUD PREDICTOR - MASTER LAUNCHER
 echo ============================================================
 echo.
 
-:: Run the PowerShell script
-powershell -ExecutionPolicy Bypass -File "%~dp0start-project.ps1"
+:: Check for node_modules
+if not exist "frontend\node_modules" (
+    echo [!] First time setup detected. Installing dependencies...
+    call npm run install:all
+)
+
+echo [!] Starting Backend and Frontend Servers...
+echo [!] Once started, visit: http://localhost:3000
+echo.
+
+:: Open the Command Center UI
+start "" "%~dp0NEXORA_CENTER.html"
+
+:: Run concurrently
+npm start
+
+pause

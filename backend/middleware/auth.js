@@ -33,6 +33,26 @@ const authenticateToken = async (req, res, next) => {
     const decoded = jwt.verify(token, JWT_KEY);
 
     // Find user and attach to request
+    // In Demo Mode, use a mock user if database is unreachable
+    if (global.DEMO_MODE) {
+      req.user = {
+        _id: '000000000000000000000000',
+        name: 'Demo User',
+        email: 'demo@nexora.app',
+        role: 'user',
+        kycStatus: 'verified',
+        kycCompleted: true,
+        protectionSettings: {
+          callProtection: { enabled: true, alertMode: 'popup' },
+          smsProtection: { enabled: true, alertMode: 'popup' },
+          emailProtection: { enabled: true, alertMode: 'popup' }
+        },
+        save: async () => true, // Mock save
+        getEnabledProtections: () => ['call', 'sms', 'email']
+      };
+      return next();
+    }
+
     const user = await User.findById(decoded.userId);
 
     if (!user) {
